@@ -1,0 +1,12 @@
+{
+  "views": {
+    "diary": {
+      "title": "日记"
+    }
+  },
+  "pages": {
+    "diary": {
+      "title": "日记"
+    }
+  }
+}
