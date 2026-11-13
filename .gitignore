@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 本地运行产生的数据（日记、日志、缓存）
+data/
+*.log
+webui_prefs.json
+state.json
+
+# 打包产物
+*.zip
