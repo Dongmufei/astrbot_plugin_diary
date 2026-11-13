@@ -1,0 +1,94 @@
+{
+  "enabled": {
+    "description": "总开关：是否记录日常并自动写日记",
+    "type": "bool",
+    "default": true
+  },
+  "diary_time": {
+    "description": "每天几点写日记（24 小时制，HH:MM）",
+    "type": "string",
+    "default": "23:30",
+    "hint": "到了这个点，如果今天还没写，就会自动写一篇。服务器重启后也会补写。"
+  },
+  "timezone": {
+    "description": "按哪个时区算“今天”和写日记时间",
+    "type": "string",
+    "default": "Asia/Shanghai",
+    "hint": "云服务器常是 UTC，填 Asia/Shanghai 才会在当地晚上写。"
+  },
+  "bot_name": {
+    "description": "她叫什么（写日记时用来自称）",
+    "type": "string",
+    "default": "她"
+  },
+  "persona_id": {
+    "description": "沿用 AstrBot 人格（可选）",
+    "type": "string",
+    "default": "",
+    "_special": "select_persona",
+    "hint": "选了会尽量读取该人格的设定；读不到时用下面的 persona_prompt。"
+  },
+  "persona_prompt": {
+    "description": "她的人设 / 世界观（推荐填，越具体越好）",
+    "type": "text",
+    "default": "",
+    "hint": "例如：你是一条住在 QQ 里的小鱼，住在阿冬的手机里，怕吵、爱吃、会因为主人很久不回消息而胡思乱想……"
+  },
+  "life_setting": {
+    "description": "她的日常生活设定（可选）",
+    "type": "text",
+    "default": "",
+    "hint": "她平时在哪、做什么、和谁住、有什么习惯。没聊天记录时，日记会靠这些写出“她自己的一天”。"
+  },
+  "extra_style": {
+    "description": "写作风格补充（可选）",
+    "type": "text",
+    "default": "",
+    "hint": "例如：句子短一点，不要用成语，偶尔写错别字。"
+  },
+  "diary_length": {
+    "description": "日记正文大概多少字",
+    "type": "int",
+    "default": 450,
+    "slider": {"min": 150, "max": 1200, "step": 50}
+  },
+  "provider_id": {
+    "description": "用哪个模型写日记（可选）",
+    "type": "string",
+    "default": "",
+    "_special": "select_provider",
+    "hint": "留空就跟当前会话用同一个模型。"
+  },
+  "watch_sessions": {
+    "description": "记录哪些会话的聊天（留空 = 全部）",
+    "type": "list",
+    "default": [],
+    "_special": "umo",
+    "hint": "只把想让她记住的私聊/群加进来，别把无关群的聊天写进日记。"
+  },
+  "deliver_to": {
+    "description": "日记写好后发到哪里（留空 = 只存不发）",
+    "type": "list",
+    "default": [],
+    "_special": "umo",
+    "hint": "一般选和你的私聊。也支持发到某个群。"
+  },
+  "inject_recent": {
+    "description": "聊天时带进最近几篇日记（0 = 不带）",
+    "type": "int",
+    "default": 2,
+    "slider": {"min": 0, "max": 5, "step": 1},
+    "hint": "带进去她才会“记得自己写过什么”。每篇只取前 200 字，开销很小。"
+  },
+  "admin_only": {
+    "description": "只有管理员能用日记指令",
+    "type": "bool",
+    "default": true
+  },
+  "keep_log_days": {
+    "description": "聊天记录保留多少天（日记永久保留）",
+    "type": "int",
+    "default": 30,
+    "slider": {"min": 3, "max": 180, "step": 1}
+  }
+}

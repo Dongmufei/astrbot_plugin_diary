@@ -1,0 +1,16 @@
+config:
+  enabled: true
+  diary_time: "23:30"
+  timezone: Asia/Shanghai
+  bot_name: 她
+  persona_id: ""
+  persona_prompt: ""
+  life_setting: ""
+  extra_style: ""
+  diary_length: 450
+  provider_id: ""
+  watch_sessions: []
+  deliver_to: []
+  inject_recent: 2
+  admin_only: true
+  keep_log_days: 30

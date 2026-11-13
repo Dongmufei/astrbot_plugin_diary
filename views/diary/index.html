@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>日记本</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="side">
+      <div class="side-head">
+        <div class="brand">
+          <span class="moon">🌙</span>
+          <div>
+            <div class="brand-title" id="brandTitle">她的日记本</div>
+            <div class="brand-sub" id="brandSub">加载中…</div>
+          </div>
+        </div>
+        <button class="icon-btn" id="btnSettings" title="设置">⚙</button>
+      </div>
+
+      <div class="side-actions">
+        <button class="btn primary" id="btnNew">＋ 新的一天</button>
+        <button class="btn" id="btnExport" title="导出全部日记为 Markdown">⤓ 导出</button>
+      </div>
+
+      <div class="search-wrap">
+        <input id="search" class="search" type="search" placeholder="搜索标题或正文…">
+      </div>
+
+      <ul class="list" id="list"></ul>
+      <div class="side-foot" id="sideFoot"></div>
+    </aside>
+
+    <main class="main" id="main">
+      <div class="empty" id="empty">
+        <div class="empty-emoji">📖</div>
+        <p>从左边挑一天，或者点「新的一天」开始写。</p>
+      </div>
+
+      <div class="editor hidden" id="editor">
+        <div class="editor-head">
+          <div class="date-chip" id="dateChip">
+            <button class="chip-arrow" id="btnPrevDay" title="前一天">‹</button>
+            <label class="date-label">
+              <input type="date" id="dateInput">
+            </label>
+            <button class="chip-arrow" id="btnNextDay" title="后一天">›</button>
+          </div>
+          <div class="head-actions">
+            <button class="btn" id="btnGenerate" title="让她按当天的聊天记录重写一篇">✦ 让她写</button>
+            <button class="btn danger-ghost" id="btnDelete" title="删除这一天的日记">🗑 删除</button>
+            <button class="btn primary" id="btnSave">保存</button>
+          </div>
+        </div>
+
+        <div class="meta-row">
+          <span class="pill" id="pillState"></span>
+          <span class="pill" id="pillLogs"></span>
+          <span class="pill muted" id="pillChars"></span>
+          <span class="saved-tip" id="savedTip"></span>
+        </div>
+
+        <input id="titleInput" class="title-input" placeholder="标题" maxlength="40">
+
+        <div class="body-wrap">
+          <textarea id="contentInput" class="content-input" placeholder="今天发生了什么…"></textarea>
+          <div class="preview hidden" id="preview"></div>
+        </div>
+
+        <details class="log-panel" id="logPanel">
+          <summary>那天你们说了什么（生成日记的素材）</summary>
+          <div class="log-body" id="logBody"></div>
+        </details>
+      </div>
+    </main>
+
+    <div class="drawer-mask hidden" id="settingsMask"></div>
+    <section class="drawer hidden" id="settings">
+      <div class="drawer-head">
+        <div class="brand-title">设置</div>
+        <button class="icon-btn" id="btnCloseSettings">✕</button>
+      </div>
+      <div class="drawer-body" id="settingsBody"></div>
+      <div class="drawer-foot">
+        <span class="saved-tip" id="settingsTip"></span>
+        <button class="btn primary" id="btnSaveSettings">保存设置</button>
+      </div>
+    </section>
+
+    <div class="toast-wrap" id="toasts"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

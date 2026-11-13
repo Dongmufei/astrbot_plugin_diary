@@ -1,0 +1,13 @@
+name: astrbot_plugin_diary
+display_name: 日记本
+desc: 让她每天自己写日记：悄悄记下日常、到点生成，网页上可以翻看修改，聊天时还会想起自己写过什么。
+help: /日记 看今天的；/日记 昨天 看某天；/翻日记 看最近；/写日记 立刻写一篇（测试）。
+version: 2.0.1
+author: Dongmufei
+repo: https://github.com/Dongmufei/astrbot_plugin_diary
+astrbot_version: ">=4.14.0"
+tags:
+  - 日记
+  - 记忆
+  - 主动消息
+  - 陪伴
