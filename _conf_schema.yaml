@@ -10,7 +10,16 @@ config:
   diary_length: 450
   provider_id: ""
   watch_sessions: []
+  diary_sources: []
   deliver_to: []
   inject_recent: 2
+  inject_log_days: 1
+  inject_max_chars: 10000
+  inject_daily_time: "04:00"
+  carry_sessions: all
+  carry_private_to_group: false
+  inject_in_group: false
+  migrate_legacy_logs: true
+  legacy_in_recall: true
   admin_only: true
   keep_log_days: 30

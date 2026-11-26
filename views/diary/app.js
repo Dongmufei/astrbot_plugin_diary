@@ -65,6 +65,50 @@
     }, isErr ? 4200 : 2200);
   }
 
+  // AstrBot 的插件页面跑在 `sandbox="allow-scripts allow-forms allow-downloads"` 的 iframe 里，
+  // 没有 allow-modals —— window.confirm()/alert() 会被浏览器直接无视并返回 false。
+  // 以前「让她写」「删除」都靠 confirm 二次确认，所以在网页里点了没反应。这里换成页面内的对话框。
+  function askConfirm(message, opts) {
+    opts = opts || {};
+    return new Promise(function (resolve) {
+      var done = false;
+      function finish(v) {
+        if (done) return;
+        done = true;
+        document.removeEventListener("keydown", onKey, true);
+        mask.style.opacity = "0";
+        setTimeout(function () { if (mask.parentNode) mask.remove(); }, 160);
+        resolve(v);
+      }
+      function onKey(e) {
+        if (e.key === "Escape") { e.preventDefault(); finish(false); }
+        else if (e.key === "Enter") { e.preventDefault(); finish(true); }
+      }
+      var okBtn = h("button", {
+        class: "dlg-btn" + (opts.danger ? " danger" : " primary"),
+        type: "button",
+        text: opts.okText || "确定",
+        onclick: function () { finish(true); },
+      });
+      var cancelBtn = h("button", {
+        class: "dlg-btn ghost",
+        type: "button",
+        text: opts.cancelText || "取消",
+        onclick: function () { finish(false); },
+      });
+      var box = h("div", { class: "dlg", role: "dialog", "aria-modal": "true" }, [
+        h("div", { class: "dlg-title", text: opts.title || "确认一下" }),
+        h("div", { class: "dlg-msg", text: String(message || "") }),
+        h("div", { class: "dlg-actions" }, [cancelBtn, okBtn]),
+      ]);
+      var mask = h("div", { class: "dlg-mask" }, [box]);
+      mask.addEventListener("click", function (e) { if (e.target === mask) finish(false); });
+      document.addEventListener("keydown", onKey, true);
+      document.body.appendChild(mask);
+      setTimeout(function () { try { okBtn.focus(); } catch (err) {} }, 30);
+    });
+  }
+
   function pad(n) { return n < 10 ? "0" + n : String(n); }
 
   function toDateStr(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
@@ -113,13 +157,14 @@
     return await bridge.apiGet(path, params || undefined);
   }
 
-  async function apiSend(method, path, body) {
+  // AstrBot 注入的 bridge 只保证有 apiGet / apiPost（PUT、DELETE 在不少版本里根本没有），
+  // 所以写操作一律走 POST；后端对应地也注册了 POST 版的保存／删除路由。
+  async function apiPost(path, body) {
     if (!bridge) throw new Error("页面还没接上 AstrBot（bridge 未就绪）");
-    var fn = bridge[method];
-    if (typeof fn !== "function") {
-      throw new Error("当前 AstrBot 版本不支持 " + method + " 请求，请升级 AstrBot");
+    if (typeof bridge.apiPost !== "function") {
+      throw new Error("当前页面缺少 apiPost 通道，请从 AstrBot 后台的插件页面打开");
     }
-    return await fn.call(bridge, path, body);
+    return await bridge.apiPost(path, body || {});
   }
 
   function errText(e) {
@@ -192,7 +237,7 @@
     if (!date) return;
     opts = opts || {};
     if (state.dirty && !opts.force) {
-      if (!window.confirm("这一天还有没保存的修改，要放弃吗？")) return;
+      if (!(await askConfirm("这一天还有没保存的修改，要放弃吗？", { okText: "放弃修改" }))) return;
     }
     state.dirty = false;
     el.empty.classList.add("hidden");
@@ -221,7 +266,7 @@
       el.titleInput.value = state.current.title;
       el.contentInput.value = state.current.content;
       renderMeta(data);
-      renderLogs(data.messages || []);
+      renderLogs(data.sessions || [], data.messages || []);
       renderPreview();
       renderList(el.search.value.trim());
     } catch (e) {
@@ -237,7 +282,8 @@
     el.pillState.className = has ? "pill" : "pill muted";
     var lg = data.log || {};
     if (lg.count) {
-      el.pillLogs.textContent = "当天聊了 " + lg.count + " 条（可当素材）";
+      var sn = (data.sessions || []).length;
+      el.pillLogs.textContent = "当天聊了 " + lg.count + " 条" + (sn > 1 ? "（" + sn + " 个会话）" : "") + "（可当素材）";
       el.pillLogs.className = "pill muted";
     } else if (lg.exists) {
       el.pillLogs.textContent = "当天只有她自己的话";
@@ -253,23 +299,45 @@
     el.pillChars.textContent = bytes(el.contentInput.value) + " 字";
   }
 
-  function renderLogs(messages) {
+  function renderLogs(sessions, messages) {
     el.logBody.innerHTML = "";
     el.logPanel.open = false;
-    if (!messages.length) {
-      el.logBody.appendChild(h("div", { class: "log-empty", text: "这天没有你发的消息（她只能凭设定和心情写）。" }));
+    sessions = (sessions || []).slice();
+    if (!sessions.length && (messages || []).length) {
+      sessions = [
+        {
+          name: "对话",
+          count: messages.length,
+          messages: messages.map(function (m) { return { t: m.t, n: m.n, m: m.m }; }),
+        },
+      ];
+    }
+    var total = sessions.reduce(function (a, s) {
+      return a + (s.count || (s.messages || []).length);
+    }, 0);
+    if (!sessions.length) {
+      el.logBody.appendChild(h("div", { class: "log-empty", text: "这天没有聊天记录（她只能凭设定和心情写）。" }));
       el.logPanel.querySelector("summary").textContent = "那天的聊天记录：没有";
       return;
     }
-    el.logPanel.querySelector("summary").textContent = "那天的聊天记录（" + messages.length + " 条，写日记时会用到）";
-    messages.forEach(function (m) {
-      el.logBody.appendChild(
-        h("div", { class: "log-line" }, [
-          h("span", { class: "t", text: m.t || "" }),
-          h("span", { class: "n", text: (m.n || "有人") + "：" }),
-          document.createTextNode(m.m || ""),
-        ])
-      );
+    el.logPanel.querySelector("summary").textContent =
+      "那天的聊天记录（" + total + " 条 · " + sessions.length + " 个会话，写日记和回忆时会用到）";
+    sessions.forEach(function (s) {
+      var head = h("div", { class: "log-session" }, [
+        h("span", { class: "log-session-name", text: s.name || "会话" }),
+        h("span", { class: "log-session-count", text: (s.count || (s.messages || []).length) + " 条" }),
+      ]);
+      if (s.umo) head.title = s.umo;
+      el.logBody.appendChild(head);
+      (s.messages || []).forEach(function (m) {
+        el.logBody.appendChild(
+          h("div", { class: "log-line" + (m.bot ? " is-bot" : "") }, [
+            h("span", { class: "t", text: m.t || "" }),
+            h("span", { class: "n", text: (m.n || "有人") + "：" }),
+            document.createTextNode(m.m || ""),
+          ])
+        );
+      });
     });
   }
 
@@ -311,7 +379,7 @@
     }
     setBusy(true, "保存中…");
     try {
-      await apiSend("apiPut", "diaries/" + encodePath(date), { title: title, content: content });
+      await apiPost("diaries/" + encodePath(date), { title: title, content: content });
       state.dirty = false;
       state.current = { date: date, title: title, content: content, hasDiary: true };
       el.savedTip.textContent = "已保存";
@@ -331,10 +399,18 @@
     var date = el.dateInput.value;
     if (!date) return;
     var exists = state.current && state.current.hasDiary;
-    if (exists && !window.confirm("这一天已经有日记了，要让她重写吗？原来的内容会被覆盖。")) return;
+    if (
+      exists &&
+      !(await askConfirm(
+        "这一天已经有日记了，要让她重写吗？原来的内容会被覆盖。",
+        { okText: "让她重写", danger: true }
+      ))
+    ) {
+      return;
+    }
     setBusy(true, "她正在写…");
     try {
-      var raw = await apiSend("apiPost", "diaries/" + encodePath(date) + "/generate", { force: true });
+      var raw = await apiPost("diaries/" + encodePath(date) + "/generate", { force: true });
       var data = pick(raw) || {};
       var d = data.diary;
       if (!d) throw new Error("没有返回日记内容");
@@ -357,6 +433,19 @@
     }
   }
 
+  // 删除优先走专用的 POST /diaries/<date>/delete；万一后端还是旧版本（没有这条路由），
+  // 退回到保存接口带上 delete 标记，保证任何版本都能删掉。
+  async function deleteDay(date) {
+    var path = "diaries/" + encodePath(date);
+    try {
+      await apiPost(path + "/delete", {});
+    } catch (e) {
+      var msg = errText(e);
+      if (!/未找到|not found|404/i.test(msg)) throw e;
+      await apiPost(path, { delete: true });
+    }
+  }
+
   async function removeDay() {
     var date = el.dateInput.value;
     if (!date) return;
@@ -364,10 +453,10 @@
       toast("这一天本来就没有日记");
       return;
     }
-    if (!window.confirm("删除 " + date + " 的日记？删了就找不回来了。")) return;
+    if (!(await askConfirm("删除 " + date + " 的日记？删了就找不回来了。", { okText: "删除", danger: true }))) return;
     setBusy(true, "删除中…");
     try {
-      await apiSend("apiDelete", "diaries/" + encodePath(date));
+      await deleteDay(date);
       el.titleInput.value = "";
       el.contentInput.value = "";
       state.current = { date: date, title: "", content: "", hasDiary: false };
@@ -468,7 +557,7 @@
       body.appendChild(h("div", { class: "group-title", text: g.name }));
       if (g.desc) body.appendChild(h("div", { class: "group-desc", text: g.desc }));
       items.forEach(function (f) {
-        body.appendChild(renderField(f, values[f.key], { providers: providers, personas: personas, lastUmo: data.last_umo }));
+        body.appendChild(renderField(f, values[f.key], { providers: providers, personas: personas, lastUmo: data.last_umo, sessions: data.sessions || [] }));
       });
     });
 
@@ -528,18 +617,49 @@
       } else {
         control = num;
       }
+    } else if (f.options && f.options.length) {
+      var sel = h("select", { id: id });
+      f.options.forEach(function (o) {
+        var op = h("option", { value: o.value, text: o.label });
+        if (String(o.value) === String(value)) op.selected = true;
+        sel.appendChild(op);
+      });
+      control = sel;
     } else if (f.type === "list") {
       var isUmo = f.special === "umo";
       var ta = h("textarea", { id: id, spellcheck: "false" });
       ta.value = Array.isArray(value) ? value.join("\n") : value || "";
-      ta.placeholder = isUmo ? "一行一个，例如：\naiocqhttp:FriendMessage:123456789" : "一行一个";
+      ta.placeholder = isUmo ? "一行一个，也可以点下面的会话直接填" : "一行一个";
       var extraHint = "";
       if (isUmo && extra.lastUmo) {
-        extraHint = "最近一次聊天会话：" + extra.lastUmo + "（填这个基本就能用）";
+        extraHint = "最近一次聊天会话：" + extra.lastUmo;
       } else if (isUmo) {
-        extraHint = "还没检测到会话。先在 QQ 里让她回一句话再回来看，这里就会提示该填什么。";
+        extraHint = "还没检测到会话。先在 QQ 里让她回一句话再回来看。";
       }
-      return fieldWrap(f, ta, extraHint);
+      var box = h("div", {}, [ta]);
+      if (isUmo) {
+        var known = (extra.sessions || []).slice(0, 8);
+        if (known.length) {
+          var chips = h("div", { class: "chip-row" });
+          known.forEach(function (s) {
+            chips.appendChild(
+              h("button", {
+                class: "chip",
+                type: "button",
+                title: s.umo,
+                text: (s.kind === "group" ? "群 · " : "私聊 · ") + (s.name || s.umo),
+                onclick: function () {
+                  var lines = ta.value.split(/\n+/).map(function (x) { return x.trim(); }).filter(Boolean);
+                  if (lines.indexOf(s.umo) < 0) lines.push(s.umo);
+                  ta.value = lines.join("\n");
+                },
+              })
+            );
+          });
+          box.appendChild(chips);
+        }
+      }
+      return fieldWrap(f, box, extraHint);
     } else if (f.special === "select_provider") {
       var sp = h("select", { id: id });
       sp.appendChild(h("option", { value: "", text: "跟随当前会话" }));
@@ -595,7 +715,7 @@
     el.btnSaveSettings.disabled = true;
     el.settingsTip.textContent = "保存中…";
     try {
-      var raw = await apiSend("apiPost", "settings", { values: values });
+      var raw = await apiPost("settings", { values: values });
       var saved = pick(raw) || {};
       if (saved.settings) {
         state.settings = saved.settings;

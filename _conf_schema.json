@@ -17,7 +17,7 @@
     "hint": "云服务器常是 UTC，填 Asia/Shanghai 才会在当地晚上写。"
   },
   "bot_name": {
-    "description": "她叫什么（写日记时用来自称）",
+    "description": "她叫什么（写日记时用来自称，也用来标记对话里她自己说的话）",
     "type": "string",
     "default": "她"
   },
@@ -64,7 +64,71 @@
     "type": "list",
     "default": [],
     "_special": "umo",
-    "hint": "只把想让她记住的私聊/群加进来，别把无关群的聊天写进日记。"
+    "hint": "只把想让她记住的私聊/群加进来。每个会话的记录会存成单独的文件，方便查找。"
+  },
+  "diary_sources": {
+    "description": "写日记时参考哪些会话（留空 = 全部会话）",
+    "type": "list",
+    "default": [],
+    "_special": "umo",
+    "hint": "只让某几个会话进日记，别的群聊得再热闹也不写进去。留空就是全都参考。"
+  },
+  "inject_recent": {
+    "description": "回忆里带进最近几篇日记（0 = 不带）",
+    "type": "int",
+    "default": 2,
+    "slider": {"min": 0, "max": 5, "step": 1},
+    "hint": "只在“这段对话第一次说话 / 你 /new 或 /reset 之后 / 过了刷新时间”时带一次，同一段对话里不会反复注入。"
+  },
+  "inject_log_days": {
+    "description": "回忆里带进最近几天的对话（0 = 不带）",
+    "type": "int",
+    "default": 1,
+    "slider": {"min": 0, "max": 5, "step": 1},
+    "hint": "分段标注来源，她自己说的话标成「你」。"
+  },
+  "inject_max_chars": {
+    "description": "一次带进多少字（日记 + 对话合计）",
+    "type": "int",
+    "default": 10000,
+    "slider": {"min": 2000, "max": 20000, "step": 500},
+    "hint": "大了记得清楚但费 token，小了省事但容易忘。10000 字大约 3000 token。"
+  },
+  "inject_daily_time": {
+    "description": "记忆刷新时间（已停用：现在只有 /想想 会带回忆）",
+    "type": "string",
+    "default": "04:00",
+    "hint": "自动注入已取消，这一项不再有作用，留着只为兼容旧配置。"
+  },
+  "carry_sessions": {
+    "description": "回忆范围：current=只当前会话 / private=当前会话+所有私聊 / all=全部会话",
+    "type": "string",
+    "default": "all",
+    "hint": "范围管“能带多少”，下面的开关管“哪些话不能跨群”。网页里是下拉选择。"
+  },
+  "carry_private_to_group": {
+    "description": "允许私聊里说过的话出现在群聊的回忆里",
+    "type": "bool",
+    "default": false,
+    "hint": "默认关。打开后她在群里可能提起你们私下说过的事。"
+  },
+  "inject_in_group": {
+    "description": "（已停用）自动注入取消后，群聊和私聊一样：发 /想想 就会带",
+    "type": "bool",
+    "default": false,
+    "hint": "没有任何作用了，留着只为兼容旧配置。"
+  },
+  "migrate_legacy_logs": {
+    "description": "升级时把旧格式的聊天记录分散到各会话",
+    "type": "bool",
+    "default": true,
+    "hint": "只读取旧文件生成新文件，旧文件原样保留。"
+  },
+  "legacy_in_recall": {
+    "description": "旧格式聊天记录也进回忆（来源标注为历史记录）",
+    "type": "bool",
+    "default": true,
+    "hint": "关掉之后，旧记录只当写日记的素材，不会在聊天时被想起来。"
   },
   "deliver_to": {
     "description": "日记写好后发到哪里（留空 = 只存不发）",
@@ -72,13 +136,6 @@
     "default": [],
     "_special": "umo",
     "hint": "一般选和你的私聊。也支持发到某个群。"
-  },
-  "inject_recent": {
-    "description": "聊天时带进最近几篇日记（0 = 不带）",
-    "type": "int",
-    "default": 2,
-    "slider": {"min": 0, "max": 5, "step": 1},
-    "hint": "带进去她才会“记得自己写过什么”。每篇只取前 200 字，开销很小。"
   },
   "admin_only": {
     "description": "只有管理员能用日记指令",

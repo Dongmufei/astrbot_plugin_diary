@@ -5,7 +5,9 @@
     GET    /astrbot_plugin_diary/diaries                 列表（分页/搜索）
     GET    /astrbot_plugin_diary/diaries/<date>          某一天（含用户当天聊天记录）
     PUT    /astrbot_plugin_diary/diaries/<date>          保存/新建
+    POST   /astrbot_plugin_diary/diaries/<date>          保存/新建（POST 版，页面 bridge 只保证 GET/POST）
     DELETE /astrbot_plugin_diary/diaries/<date>          删除
+    POST   /astrbot_plugin_diary/diaries/<date>/delete   删除（POST 版）
     POST   /astrbot_plugin_diary/diaries/<date>/generate 让她重新写这一天
     GET    /astrbot_plugin_diary/stats                   概览
     GET    /astrbot_plugin_diary/settings                当前配置 + schema
@@ -128,6 +130,7 @@ def ensure_web_apis(plugin) -> None:
     add(f"/{PLUGIN_NAME}/diaries/<date>", get_diary(plugin), ["GET"], "某一天的日记")
     add(f"/{PLUGIN_NAME}/diaries/<date>", save_diary(plugin), ["PUT", "POST"], "保存/修改日记")
     add(f"/{PLUGIN_NAME}/diaries/<date>", delete_diary(plugin), ["DELETE"], "删除日记")
+    add(f"/{PLUGIN_NAME}/diaries/<date>/delete", delete_diary(plugin), ["POST", "DELETE"], "删除日记（POST 版）")
     add(f"/{PLUGIN_NAME}/stats", stats(plugin), ["GET"], "日记本概览")
     add(f"/{PLUGIN_NAME}/settings", get_settings(plugin), ["GET"], "读取配置")
     add(f"/{PLUGIN_NAME}/settings", save_settings(plugin), ["POST", "PUT"], "保存配置")
@@ -220,6 +223,46 @@ def list_diaries(plugin):
     return handler
 
 
+def _session_messages(entries: list[dict]) -> list[dict]:
+    out = []
+    for e in entries:
+        bot = e.get("bot")
+        out.append(
+            {
+                "t": e.get("t", ""),
+                "n": "她" if bot else (e.get("n") or "有人"),
+                "bot": bool(bot),
+                "m": e.get("m", ""),
+            }
+        )
+    return out
+
+
+def _session_options(plugin) -> list[dict]:
+    out = []
+    seen = set()
+    book = getattr(plugin, "book", None)
+    known = book.all() if book is not None else {}
+    for umo, rec in (known or {}).items():
+        if not isinstance(rec, dict):
+            continue
+        seen.add(str(umo))
+        out.append(
+            {
+                "umo": str(umo),
+                "name": rec.get("title") or rec.get("name") or str(umo),
+                "file": rec.get("name") or "",
+                "kind": rec.get("kind") or core.umo_kind(str(umo)),
+                "last": rec.get("last") or "",
+            }
+        )
+    last = str(plugin._state.get("last_umo") or "")
+    if last and last not in seen:
+        out.append({"umo": last, "name": last, "file": "", "kind": core.umo_kind(last), "last": ""})
+    out.sort(key=lambda x: str(x.get("last") or ""), reverse=True)
+    return out
+
+
 def get_diary(plugin):
     async def handler(date: str = "", **kwargs):
         from astrbot.api.web import json_response
@@ -228,13 +271,43 @@ def get_diary(plugin):
             return json_response({"error": "日期格式应为 YYYY-MM-DD"}, status_code=400)
         d = plugin.store.get(date)
         logs = core.read_logs(plugin.root, date)
+        book = getattr(plugin, "book", None)
+        sessions = []
+        for umo, rec in core.read_sessions(plugin.root, date).items():
+            info = book.get(umo) if book is not None else {}
+            msgs = _session_messages(rec.get("entries") or [])
+            sessions.append(
+                {
+                    "umo": umo,
+                    "name": (info or {}).get("title") or rec.get("name") or umo,
+                    "label": rec.get("name") or umo,
+                    "kind": rec.get("kind") or core.umo_kind(umo),
+                    "count": len(msgs),
+                    "messages": msgs,
+                }
+            )
+        legacy = core.read_legacy_entries(plugin.root, date)
+        if legacy:
+            sessions.append(
+                {
+                    "umo": "",
+                    "name": "历史记录（旧格式）",
+                    "label": "历史记录",
+                    "kind": "legacy",
+                    "count": len(legacy),
+                    "messages": _session_messages(legacy),
+                }
+            )
+        sessions.sort(key=lambda x: (x.get("kind") == "legacy", -int(x.get("count") or 0)))
+        exists = core.day_dir(plugin.root, date).is_dir() or core.log_path(plugin.root, date).exists()
         return json_response(
             {
                 "date": date,
                 "diary": _diary_payload(date, d) if d else None,
                 "has_diary": bool(d),
-                "log": {"count": len(logs), "exists": core.log_path(plugin.root, date).exists()},
+                "log": {"count": len(logs), "exists": exists},
                 "messages": _user_texts(logs),
+                "sessions": sessions,
             }
         )
 
@@ -250,6 +323,16 @@ def save_diary(plugin):
         data = await _read_json(kwargs)
         if not isinstance(data, dict):
             return error_response("请求体格式不对", status_code=400)
+        # 兼容旧版前端/兜底通道：保存接口带 delete 标记时按删除处理
+        if data.get("delete"):
+            try:
+                ok = plugin.store.delete(date)
+            except Exception as e:
+                return error_response(f"删除失败：{e}", status_code=500)
+            if not ok:
+                return error_response("没有这一天的日记", status_code=404)
+            logger.info(f"[diary] 删除了 {date} 的日记")
+            return json_response({"ok": True, "deleted": date})
         title = str(data.get("title") or "").strip()
         content = str(data.get("content") or "").replace("\r\n", "\n").replace("\r", "\n")
         existed = plugin.store.get(date) is not None
@@ -292,7 +375,9 @@ def generate_diary(plugin):
         try:
             diary = await plugin.generate(date, force=force)
         except Exception as e:
-            logger.error(f"[diary] 网页生成 {date} 失败: {e}")
+            import traceback
+
+            logger.error(f"[diary] 网页生成 {date} 失败: {e}\n{traceback.format_exc()}")
             return error_response(f"让她写失败：{e}", status_code=500)
         if not diary:
             return error_response("这次什么也没写出来", status_code=502)
@@ -308,7 +393,8 @@ def stats(plugin):
         items = plugin.store.all()
         dates = plugin.store.sorted_dates()
         today = plugin._today()
-        logs_today = core.read_logs(plugin.root, today)
+        logs_today = core.day_count(plugin.root, today)
+        sessions_today = len(core.read_sessions(plugin.root, today))
         words = sum(len(d.get("content", "")) for d in items.values())
         return json_response(
             {
@@ -318,7 +404,10 @@ def stats(plugin):
                 "last_date": dates[0] if dates else "",
                 "today": today,
                 "has_today": today in items,
-                "today_logs": len(logs_today),
+                "today_logs": logs_today,
+                "today_sessions": sessions_today,
+                "inject_daily_time": plugin.cfg.get("inject_daily_time"),
+                "inject_log_days": plugin.cfg.get("inject_log_days"),
                 "diary_time": plugin.cfg.get("diary_time"),
                 "enabled": bool(plugin.cfg.get("enabled", True)),
                 "provider_id": plugin.cfg.get("provider_id") or "",
@@ -348,6 +437,10 @@ def get_settings(plugin):
         except Exception:
             data["personas"] = []
         data["last_umo"] = plugin._state.get("last_umo") or ""
+        try:
+            data["sessions"] = _session_options(plugin)
+        except Exception:
+            data["sessions"] = []
         data["cwd_hint"] = ""
         return json_response(data)
 
@@ -372,6 +465,10 @@ def save_settings(plugin):
             return error_response(f"保存失败：{e}", status_code=500)
         data["values"] = values
         data["last_umo"] = plugin._state.get("last_umo") or ""
+        try:
+            data["sessions"] = _session_options(plugin)
+        except Exception:
+            data["sessions"] = []
         return json_response({"ok": True, "settings": data, "values": values})
 
     return handler
